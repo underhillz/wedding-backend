@@ -1,7 +1,6 @@
 import Stripe from "stripe";
-import { buffer } from "micro";
 
-// Required for Stripe to verify the signature.
+// Disable body parsing so we get the raw body for Stripe signature verification
 export const config = {
   api: {
     bodyParser: false,
@@ -12,41 +11,39 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 export default async function handler(req, res) {
   if (req.method !== "POST") {
-    return res.status(405).send("Method not allowed");
+    return res.status(405).send("Method Not Allowed");
   }
 
+  const buf = await getRawBody(req);
   const sig = req.headers["stripe-signature"];
 
   let event;
 
   try {
-    const rawBody = await buffer(req);
     event = stripe.webhooks.constructEvent(
-      rawBody,
+      buf,
       sig,
       process.env.STRIPE_WEBHOOK_SECRET
     );
   } catch (err) {
-    console.error("❌ Webhook signature verification failed.", err.message);
+    console.error("❌ Stripe signature verification error:", err.message);
     return res.status(400).send(`Webhook Error: ${err.message}`);
   }
 
-  // Process ONLY completed checkout sessions
   if (event.type === "checkout.session.completed") {
     const session = event.data.object;
 
     const recordId = session.metadata?.recordId;
-    const priceId = session.metadata?.priceId;
 
-    console.log("🎉 Checkout complete for:", { recordId, priceId });
+    console.log("🎉 Successful checkout:", { recordId });
 
     if (!recordId) {
-      console.error("⚠️ No recordId in metadata");
-      return res.status(200).send("No recordId provided");
+      console.warn("⚠️ No recordId found in metadata");
+      return res.status(200).send("No recordId");
     }
 
     try {
-      // Update Airtable (mark item as purchased)
+      // Airtable update
       const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${encodeURIComponent(
         process.env.AIRTABLE_TABLE_NAME
       )}/${recordId}`;
@@ -65,14 +62,21 @@ export default async function handler(req, res) {
       });
 
       const result = await response.json();
-
       console.log("✅ Airtable updated:", result);
-
     } catch (err) {
-      console.error("❌ Failed to update Airtable:", err);
+      console.error("❌ Airtable update failed:", err.message);
       return res.status(500).send("Airtable update failed");
     }
   }
 
   res.status(200).send("Webhook received");
+}
+
+// Helper to read raw request body
+async function getRawBody(req) {
+  const chunks = [];
+  for await (const chunk of req) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  }
+  return Buffer.concat(chunks);
 }
