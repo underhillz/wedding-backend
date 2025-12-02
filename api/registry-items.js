@@ -1,23 +1,20 @@
-export default async function handler(req, res) {
-  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`;
+const items = data.records.map((r) => ({
+  id: r.id,
+  name: r.fields.Name,
+  image: r.fields.Image?.[0]?.url || "",
+  priceDisplay: r.fields.PriceDisplay,
+  description: r.fields.Description,
+  stripePriceId: r.fields.StripePriceId,
+  purchased: r.fields.Purchased || false,
+}));
 
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-    },
-  });
+res.setHeader("Access-Control-Allow-Origin", "*");
+res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+res.setHeader("Access-Control-Allow-Headers", "Content-Type");
 
-  const data = await response.json();
-
-  const items = data.records.map((r) => ({
-    id: r.id,
-    name: r.fields.Name,
-    image: r.fields.Image?.[0]?.url || "",
-    priceDisplay: r.fields.PriceDisplay,
-    description: r.fields.Description,
-    stripePriceId: r.fields.StripePriceId,
-    purchased: r.fields.Purchased || false,
-  }));
-
-  res.status(200).json(items);
+if (req.method === "OPTIONS") {
+  res.status(200).end();
+  return;
 }
+
+res.status(200).json(items);
