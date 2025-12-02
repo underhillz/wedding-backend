@@ -1,16 +1,15 @@
 export default async function handler(req, res) {
-  // Handle CORS preflight
+  // CORS headers — DO NOT MOVE THESE
   res.setHeader("Access-Control-Allow-Origin", "*");
   res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
   res.setHeader("Access-Control-Allow-Headers", "Content-Type");
+  res.setHeader("Access-Control-Allow-Credentials", "true");
 
   if (req.method === "OPTIONS") {
-    res.status(200).end();
-    return;
+    return res.status(200).end();
   }
 
   try {
-    // Fetch from Airtable
     const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`;
 
     const response = await fetch(url, {
@@ -19,22 +18,26 @@ export default async function handler(req, res) {
       },
     });
 
+    if (!response.ok) {
+      throw new Error(`Airtable error: ${response.status}`);
+    }
+
     const data = await response.json();
 
     const items = data.records.map((r) => ({
       id: r.id,
-      name: r.fields.Name,
+      name: r.fields.Name || "",
       image: r.fields.Image?.[0]?.url || "",
-      priceDisplay: r.fields.PriceDisplay,
-      description: r.fields.Description,
-      stripePriceId: r.fields.StripePriceId,
+      priceDisplay: r.fields.PriceDisplay || "",
+      description: r.fields.Description || "",
+      stripePriceId: r.fields.StripePriceId || "",
       purchased: r.fields.Purchased || false,
     }));
 
-    res.status(200).json(items);
+    return res.status(200).json(items);
 
-  } catch (err) {
-    console.error("Error fetching registry:", err);
-    res.status(500).json({ error: "Failed to load registry" });
+  } catch (error) {
+    console.error("Registry Error:", error);
+    return res.status(500).json({ error: "Failed to load registry" });
   }
 }
