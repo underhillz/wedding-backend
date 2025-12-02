@@ -1,54 +1,23 @@
-import Stripe from "stripe";
-import getRawBody from "raw-body";
-
-export const config = {
-  api: {
-    bodyParser: false,
-  },
-};
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
-
 export default async function handler(req, res) {
-  let event;
+  const url = `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}`;
 
-  try {
-    const raw = await getRawBody(req);
-    event = stripe.webhooks.constructEvent(
-      raw,
-      req.headers["stripe-signature"],
-      process.env.STRIPE_WEBHOOK_SECRET
-    );
-  } catch (err) {
-    console.error("❌ Webhook signature failed:", err.message);
-    return res.status(400).send(`Webhook Error: ${err.message}`);
-  }
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
+    },
+  });
 
-  if (event.type === "checkout.session.completed") {
-    const session = event.data.object;
-    const recordId = session.metadata.airtableRecordId;
-    const name =
-      session.customer_details?.name ||
-      session.customer_details?.email ||
-      "Anonymous";
+  const data = await response.json();
 
-    await fetch(
-      `https://api.airtable.com/v0/${process.env.AIRTABLE_BASE_ID}/${process.env.AIRTABLE_TABLE_NAME}/${recordId}`,
-      {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${process.env.AIRTABLE_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          fields: {
-            Purchased: true,
-            PurchasedBy: name,
-          },
-        }),
-      }
-    );
-  }
+  const items = data.records.map((r) => ({
+    id: r.id,
+    name: r.fields.Name,
+    image: r.fields.Image?.[0]?.url || "",
+    priceDisplay: r.fields.PriceDisplay,
+    description: r.fields.Description,
+    stripePriceId: r.fields.StripePriceId,
+    purchased: r.fields.Purchased || false,
+  }));
 
-  res.status(200).json({ received: true });
+  res.status(200).json(items);
 }
